@@ -192,6 +192,9 @@ func (b *binder) schemaTypeToTypeImpl(src schema.Type, seen map[schema.Type]mode
 		for i, src := range src.ElementTypes {
 			types[i] = b.schemaTypeToTypeImpl(src, seen)
 		}
+		if src.Discriminator != "" {
+			return model.NewUnionTypeAnnotated(types, src)
+		}
 		return model.NewUnionType(types...)
 	default:
 		switch src {
@@ -249,6 +252,11 @@ func GetSchemaForType(t model.Type) (schema.Type, bool) {
 	case *model.PromiseType:
 		return GetSchemaForType(t.ElementType)
 	case *model.UnionType:
+		for _, a := range t.Annotations {
+			if t, ok := a.(*schema.UnionType); ok {
+				return t, true
+			}
+		}
 		schemas := codegen.Set{}
 		for _, t := range t.ElementTypes {
 			if s, ok := GetSchemaForType(t); ok {
@@ -275,4 +283,33 @@ func GetSchemaForType(t model.Type) (schema.Type, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// GetDiscriminatedUnionObjectMapping calculates a map of type names to object types for a given
+// union type.
+func GetDiscriminatedUnionObjectMapping(t *model.UnionType) map[string]model.Type {
+	mapping := map[string]model.Type{}
+	for _, t := range t.ElementTypes {
+		k, v := getDiscriminatedUnionObjectItem(t)
+		mapping[k] = v
+	}
+	return mapping
+}
+
+func getDiscriminatedUnionObjectItem(t model.Type) (string, model.Type) {
+	switch t := t.(type) {
+	case *model.ListType:
+		return getDiscriminatedUnionObjectItem(t.ElementType)
+	case *model.ObjectType:
+		if bla, ok := GetSchemaForType(t); ok {
+			if foo, ok := bla.(*schema.ObjectType); ok {
+				return foo.Token, t
+			}
+		}
+	case *model.OutputType:
+		return getDiscriminatedUnionObjectItem(t.ElementType)
+	case *model.PromiseType:
+		return getDiscriminatedUnionObjectItem(t.ElementType)
+	}
+	return "", nil
 }
