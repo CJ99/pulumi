@@ -10,6 +10,9 @@
 - [automation/*] Add support for getting stack outputs using Workspace
   [#6859](https://github.com/pulumi/pulumi/pull/6859)
 
+- [sdk/nodejs|python] Add GetSchema support to providers
+  [#6892](https://github.com/pulumi/pulumi/pull/6892)
+
 ### Bug Fixes
 
 - [sdk/python] - Fix bug in MockResourceArgs.
