@@ -304,9 +304,9 @@ func getDiscriminatedUnionObjectItem(t model.Type) (string, model.Type) {
 	case *model.ListType:
 		return getDiscriminatedUnionObjectItem(t.ElementType)
 	case *model.ObjectType:
-		if bla, ok := GetSchemaForType(t); ok {
-			if foo, ok := bla.(*schema.ObjectType); ok {
-				return foo.Token, t
+		if schemaType, ok := GetSchemaForType(t); ok {
+			if objType, ok := schemaType.(*schema.ObjectType); ok {
+				return objType.Token, t
 			}
 		}
 	case *model.OutputType:
