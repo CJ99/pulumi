@@ -68,6 +68,39 @@ function inheritedChildAlias(childName: string, parentName: string, parentAlias:
     return createUrn(aliasName, childType, parentAlias);
 }
 
+// Extract the type and name parts of a URN
+function urnTypeAndName(urn: URN) {
+    const parts = urn.split("::");
+    const typeParts = parts[2].split("$");
+    return {
+        name: parts[3],
+        type: typeParts[typeParts.length-1],
+    };
+}
+
+// Make a copy of the aliases array, and add to it any implicit aliases inherited from its parent.
+// If there are N child aliases, and M parent aliases, there will be (M+1)*(N+1)-1 total aliases,
+// or, as calculated in the logic below, N+(M*(1+N)).
+export function allAliases(childAliases: Input<URN | Alias>[], childName: string, childType: string, parent: Resource, parentName: string): Output<URN>[] {
+    const aliases: Output<URN>[] = [];
+    for (const childAlias of childAliases) {
+        aliases.push(collapseAliasToUrn(childAlias, childName, childType, parent));
+    }
+    for (const parentAlias of (parent.__aliases || [])) {
+        // For each parent alias, add an alias that uses that base child name and the parent alias
+        aliases.push(inheritedChildAlias(childName, parentName, parentAlias, childType));
+        // Also add an alias for each child alias and the parent alias
+        for (const childAlias of childAliases) {
+            const inheritedAlias = collapseAliasToUrn(childAlias, childName, childType, parent).apply(childAliasURN => {
+                const {name: aliasedChildName, type: aliasedChildType} = urnTypeAndName(childAliasURN);
+                return inheritedChildAlias(aliasedChildName, parentName, parentAlias, aliasedChildType);
+            });
+            aliases.push(inheritedAlias);
+        }
+    }
+    return aliases;
+}
+
 /**
  * Resource represents a class whose CRUD operations are implemented by a provider plugin.
  */
@@ -76,14 +109,14 @@ export abstract class Resource {
      * A private field to help with RTTI that works in SxS scenarios.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     public readonly __pulumiResource: boolean = true;
 
     /**
      * The optional parent of this resource.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     public readonly __parentResource: Resource | undefined;
 
     /**
@@ -125,7 +158,7 @@ export abstract class Resource {
      *
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     public __childResources: Set<Resource> | undefined;
 
     /**
@@ -138,7 +171,7 @@ export abstract class Resource {
      * When set to true, protect ensures this resource cannot be deleted.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     private readonly __protect: boolean;
 
     /**
@@ -149,7 +182,7 @@ export abstract class Resource {
      * cases where they are passed "old" resources.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     __transformations?: ResourceTransformation[];
 
     /**
@@ -160,7 +193,7 @@ export abstract class Resource {
      * cases where they are passed "old" resources.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     readonly __aliases?: Input<URN>[];
 
     /**
@@ -171,14 +204,14 @@ export abstract class Resource {
      * cases where they are passed "old" resources.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     private readonly __name?: string;
 
     /**
      * The set of providers to use for child resources. Keyed by package name (e.g. "aws").
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     private readonly __providers: Record<string, ProviderResource>;
 
     /**
@@ -187,14 +220,14 @@ export abstract class Resource {
      */
     // Note: This is deliberately not named `__provider` as that conflicts with the property
     // used by the `dynamic.Resource` class.
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     readonly __prov?: ProviderResource;
 
     /**
      * The specified provider version.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     readonly __version?: string;
 
     public static isInstance(obj: any): obj is Resource {
@@ -287,13 +320,8 @@ export abstract class Resource {
                 opts.protect = opts.parent.__protect;
             }
 
-            // Make a copy of the aliases array, and add to it any implicit aliases inherited from its parent
-            opts.aliases = [...(opts.aliases || [])];
-            if (opts.parent.__name) {
-                for (const parentAlias of (opts.parent.__aliases || [])) {
-                    opts.aliases.push(inheritedChildAlias(name, opts.parent.__name, parentAlias, t));
-                }
-            }
+            // Update aliases to include the full set of aliases implied by the child and parent aliases.
+            opts.aliases = allAliases(opts.aliases || [], name, t, opts.parent, opts.parent.__name!);
 
             this.__providers = opts.parent.__providers;
         }
@@ -454,10 +482,10 @@ export interface Alias {
 
 // collapseAliasToUrn turns an Alias into a URN given a set of default data
 function collapseAliasToUrn(
-        alias: Input<Alias | string>,
-        defaultName: string,
-        defaultType: string,
-        defaultParent: Resource | undefined): Output<URN> {
+    alias: Input<Alias | string>,
+    defaultName: string,
+    defaultType: string,
+    defaultParent: Resource | undefined): Output<URN> {
 
     return output(alias).apply(a => {
         if (typeof a === "string") {
@@ -684,7 +712,7 @@ export abstract class CustomResource extends Resource {
      * A private field to help with RTTI that works in SxS scenarios.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     public readonly __pulumiCustomResource: boolean;
 
     /**
@@ -692,7 +720,7 @@ export abstract class CustomResource extends Resource {
      * classes that inherit from `CustomResource`.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     public readonly __pulumiType: string;
 
     /**
@@ -745,7 +773,7 @@ export abstract class ProviderResource extends CustomResource {
     private readonly pkg: string;
 
     /** @internal */
-    // tslint:disable-next-line: variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     public __registrationId?: string;
 
     public static async register(provider: ProviderResource | undefined): Promise<string | undefined> {
@@ -792,19 +820,19 @@ export class ComponentResource<TData = any> extends Resource {
      * A private field to help with RTTI that works in SxS scenarios.
      * @internal
      */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     public readonly __pulumiComponentResource = true;
 
     /** @internal */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     public readonly __data: Promise<TData>;
 
     /** @internal */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     private __registered = false;
 
     /** @internal */
-    // tslint:disable-next-line:variable-name
+    // eslint-disable-next-line @typescript-eslint/naming-convention,no-underscore-dangle,id-blacklist,id-match
     public readonly __remote: boolean;
 
     /**
@@ -1035,17 +1063,31 @@ export class DependencyResource extends CustomResource {
  */
 export class DependencyProviderResource extends ProviderResource {
     constructor(ref: string) {
-        super("", "", {}, {}, true);
+        const [urn, id] = parseResourceReference(ref);
+        const urnParts = urn.split("::");
+        const qualifiedType = urnParts[2];
+        const type = qualifiedType.split("$").pop()!;
+        // type will be "pulumi:providers:<package>" and we want the last part.
+        const typeParts = type.split(":");
+        const pkg = typeParts.length > 2 ? typeParts[2] : "";
 
-        // Parse the URN and ID out of the provider reference.
-        const lastSep = ref.lastIndexOf("::");
-        if (lastSep === -1) {
-            throw new Error(`expected '::' in provider reference ${ref}`);
-        }
-        const urn = ref.slice(0, lastSep);
-        const id = ref.slice(lastSep+2);
+        super(pkg, "", {}, {}, true);
 
         (<any>this).urn = new Output(<any>this, Promise.resolve(urn), Promise.resolve(true), Promise.resolve(false), Promise.resolve([]));
         (<any>this).id = new Output(<any>this, Promise.resolve(id), Promise.resolve(true), Promise.resolve(false), Promise.resolve([]));
     }
+}
+
+/**
+ * parseResourceReference parses the URN and ID out of the provider reference.
+ * @internal
+ */
+export function parseResourceReference(ref: string): [string, string] {
+    const lastSep = ref.lastIndexOf("::");
+    if (lastSep === -1) {
+        throw new Error(`expected '::' in provider reference ${ref}`);
+    }
+    const urn = ref.slice(0, lastSep);
+    const id = ref.slice(lastSep+2);
+    return [urn, id];
 }

@@ -149,7 +149,7 @@ type FooInput interface {
 }
 
 func (*Foo) ElementType() reflect.Type {
-	return reflect.TypeOf((*Foo)(nil))
+	return reflect.TypeOf((**Foo)(nil)).Elem()
 }
 
 func (i *Foo) ToFooOutput() FooOutput {
@@ -160,12 +160,10 @@ func (i *Foo) ToFooOutputWithContext(ctx context.Context) FooOutput {
 	return pulumi.ToOutputWithContext(ctx, i).(FooOutput)
 }
 
-type FooOutput struct {
-	*pulumi.OutputState
-}
+type FooOutput struct{ *pulumi.OutputState }
 
 func (FooOutput) ElementType() reflect.Type {
-	return reflect.TypeOf((*Foo)(nil))
+	return reflect.TypeOf((**Foo)(nil)).Elem()
 }
 
 func (o FooOutput) ToFooOutput() FooOutput {
@@ -177,6 +175,7 @@ func (o FooOutput) ToFooOutputWithContext(ctx context.Context) FooOutput {
 }
 
 func init() {
+	pulumi.RegisterInputType(reflect.TypeOf((*FooInput)(nil)).Elem(), &Foo{})
 	pulumi.RegisterOutputType(FooOutput{})
 	pulumi.RegisterOutputType(FooBarResultOutput{})
 	pulumi.RegisterOutputType(FooGenerateKubeconfigResultOutput{})

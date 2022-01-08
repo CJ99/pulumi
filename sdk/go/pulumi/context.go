@@ -51,14 +51,15 @@ type Context struct {
 	engine      pulumirpc.EngineClient
 	engineConn  *grpc.ClientConn
 
-	keepResources bool // true if resources should be marshaled as strongly-typed references.
+	keepResources    bool // true if resources should be marshaled as strongly-typed references.
+	keepOutputValues bool // true if outputs should be marshaled as strongly-type output values.
 
 	rpcs     int        // the number of outstanding RPC requests.
 	rpcsDone *sync.Cond // an event signaling completion of RPCs.
 	rpcsLock sync.Mutex // a lock protecting the RPC count and event.
 	rpcError error      // the first error (if any) encountered during an RPC.
 
-	join sync.WaitGroup // the waitgroup for non-RPC async work associated with this context
+	join workGroup // the waitgroup for non-RPC async work associated with this context
 
 	Log Log // the logging interface for the Pulumi log stream.
 }
@@ -104,26 +105,37 @@ func NewContext(ctx context.Context, info RunInfo) (*Context, error) {
 		engine = &mockEngine{}
 	}
 
-	var keepResources bool
-	if monitor != nil {
-		supportsFeatureResp, err := monitor.SupportsFeature(ctx, &pulumirpc.SupportsFeatureRequest{
-			Id: "resourceReferences",
-		})
-		if err != nil {
-			return nil, fmt.Errorf("checking monitor features: %w", err)
+	supportsFeature := func(id string) (bool, error) {
+		if monitor != nil {
+			resp, err := monitor.SupportsFeature(ctx, &pulumirpc.SupportsFeatureRequest{Id: id})
+			if err != nil {
+				return false, fmt.Errorf("checking monitor features: %w", err)
+			}
+			return resp.GetHasSupport(), nil
 		}
-		keepResources = supportsFeatureResp.GetHasSupport()
+		return false, nil
+	}
+
+	keepResources, err := supportsFeature("resourceReferences")
+	if err != nil {
+		return nil, err
+	}
+
+	keepOutputValues, err := supportsFeature("outputValues")
+	if err != nil {
+		return nil, err
 	}
 
 	context := &Context{
-		ctx:           ctx,
-		info:          info,
-		exports:       make(map[string]Input),
-		monitorConn:   monitorConn,
-		monitor:       monitor,
-		engineConn:    engineConn,
-		engine:        engine,
-		keepResources: keepResources,
+		ctx:              ctx,
+		info:             info,
+		exports:          make(map[string]Input),
+		monitorConn:      monitorConn,
+		monitor:          monitor,
+		engineConn:       engineConn,
+		engine:           engine,
+		keepResources:    keepResources,
+		keepOutputValues: keepOutputValues,
 	}
 	context.rpcsDone = sync.NewCond(&context.rpcsLock)
 	context.Log = &logState{
@@ -267,11 +279,12 @@ func (ctx *Context) Invoke(tok string, args interface{}, result interface{}, opt
 	// Now, invoke the RPC to the provider synchronously.
 	logging.V(9).Infof("Invoke(%s, #args=%d): RPC call being made synchronously", tok, len(resolvedArgsMap))
 	resp, err := ctx.monitor.Invoke(ctx.ctx, &pulumirpc.InvokeRequest{
-		Tok:             tok,
-		Args:            rpcArgs,
-		Provider:        providerRef,
-		Version:         options.Version,
-		AcceptResources: !disableResourceReferences,
+		Tok:               tok,
+		Args:              rpcArgs,
+		Provider:          providerRef,
+		Version:           options.Version,
+		PluginDownloadURL: options.PluginDownloadURL,
+		AcceptResources:   !disableResourceReferences,
 	})
 	if err != nil {
 		logging.V(9).Infof("Invoke(%s, ...): error: %v", tok, err)
@@ -336,15 +349,18 @@ func (ctx *Context) Call(tok string, args Input, output Output, self Resource, o
 	}
 
 	prepareCallRequest := func() (*pulumirpc.CallRequest, error) {
-		// Determine the provider and version to use.
+		// Determine the provider, version and url to use.
 		var provider ProviderResource
 		var version string
+		var pluginURL string
 		if self != nil {
 			provider = self.getProvider()
 			version = self.getVersion()
+			pluginURL = self.getPluginDownloadURL()
 		} else {
 			provider = mergeProviders(tok, options.Parent, options.Provider, nil)[getPackage(tok)]
 			version = options.Version
+			pluginURL = options.PluginDownloadURL
 		}
 		var providerRef string
 		if provider != nil {
@@ -364,7 +380,7 @@ func (ctx *Context) Call(tok string, args Input, output Output, self Resource, o
 		// If we have a value for self, add it to the arguments.
 		if self != nil {
 			var deps []URN
-			resolvedSelf, selfDeps, err := marshalInput(self, nil, true)
+			resolvedSelf, selfDeps, err := marshalInput(self, reflect.TypeOf(self), true)
 			if err != nil {
 				return nil, fmt.Errorf("marshaling __self__: %w", err)
 			}
@@ -383,8 +399,9 @@ func (ctx *Context) Call(tok string, args Input, output Output, self Resource, o
 		rpcArgs, err := plugin.MarshalProperties(
 			resolvedArgs,
 			ctx.withKeepOrRejectUnknowns(plugin.MarshalOptions{
-				KeepSecrets:   true,
-				KeepResources: ctx.keepResources,
+				KeepSecrets:      true,
+				KeepResources:    ctx.keepResources,
+				KeepOutputValues: ctx.keepOutputValues,
 			}))
 		if err != nil {
 			return nil, fmt.Errorf("marshaling args: %w", err)
@@ -409,11 +426,12 @@ func (ctx *Context) Call(tok string, args Input, output Output, self Resource, o
 		}
 
 		return &pulumirpc.CallRequest{
-			Tok:             tok,
-			Args:            rpcArgs,
-			ArgDependencies: rpcArgDeps,
-			Provider:        providerRef,
-			Version:         version,
+			Tok:               tok,
+			Args:              rpcArgs,
+			ArgDependencies:   rpcArgDeps,
+			Provider:          providerRef,
+			Version:           version,
+			PluginDownloadURL: pluginURL,
 		}, nil
 	}
 
@@ -538,6 +556,7 @@ func (ctx *Context) ReadResource(
 	}
 
 	options := merge(opts...)
+	aliasParent := options.Parent
 	if options.Parent == nil {
 		options.Parent = ctx.stack
 	}
@@ -550,7 +569,7 @@ func (ctx *Context) ReadResource(
 	}
 
 	// Collapse aliases to URNs.
-	aliasURNs, err := ctx.collapseAliases(options.Aliases, t, name, options.Parent)
+	aliasURNs, err := ctx.collapseAliases(options.Aliases, t, name, aliasParent)
 	if err != nil {
 		return err
 	}
@@ -567,7 +586,8 @@ func (ctx *Context) ReadResource(
 	provider := getProvider(t, options.Provider, providers)
 
 	// Create resolvers for the resource's outputs.
-	res := ctx.makeResourceState(t, name, resource, providers, provider, options.Version, aliasURNs, transformations)
+	res := ctx.makeResourceState(t, name, resource, providers, provider,
+		options.Version, options.PluginDownloadURL, aliasURNs, transformations)
 
 	// Kick off the resource read operation.  This will happen asynchronously and resolve the above properties.
 	go func() {
@@ -587,7 +607,7 @@ func (ctx *Context) ReadResource(
 		}
 
 		// Prepare the inputs for an impending operation.
-		inputs, err = ctx.prepareResourceInputs(props, t, options, res, false)
+		inputs, err = ctx.prepareResourceInputs(resource, props, t, options, res, false)
 		if err != nil {
 			return
 		}
@@ -703,6 +723,9 @@ func (ctx *Context) registerResource(
 	}
 
 	_, custom := resource.(CustomResource)
+	if !custom && remote {
+		resource.markRemoteComponent()
+	}
 
 	if _, isProvider := resource.(ProviderResource); isProvider && !strings.HasPrefix(t, "pulumi:providers:") {
 		return errors.New("provider resource type must begin with \"pulumi:providers:\"")
@@ -720,6 +743,7 @@ func (ctx *Context) registerResource(
 	}
 
 	options := merge(opts...)
+	parent := options.Parent
 	if options.Parent == nil {
 		options.Parent = ctx.stack
 	}
@@ -732,7 +756,7 @@ func (ctx *Context) registerResource(
 	}
 
 	// Collapse aliases to URNs.
-	aliasURNs, err := ctx.collapseAliases(options.Aliases, t, name, options.Parent)
+	aliasURNs, err := ctx.collapseAliases(options.Aliases, t, name, parent)
 	if err != nil {
 		return err
 	}
@@ -749,8 +773,8 @@ func (ctx *Context) registerResource(
 	provider := getProvider(t, options.Provider, providers)
 
 	// Create resolvers for the resource's outputs.
-	resState := ctx.makeResourceState(t, name, resource, providers, provider, options.Version, aliasURNs,
-		transformations)
+	resState := ctx.makeResourceState(t, name, resource, providers, provider,
+		options.Version, options.PluginDownloadURL, aliasURNs, transformations)
 
 	// Kick off the resource registration.  If we are actually performing a deployment, the resulting properties
 	// will be resolved asynchronously as the RPC operation completes.  If we're just planning, values won't resolve.
@@ -767,7 +791,7 @@ func (ctx *Context) registerResource(
 		}()
 
 		// Prepare the inputs for an impending operation.
-		inputs, err = ctx.prepareResourceInputs(props, t, options, resState, remote)
+		inputs, err = ctx.prepareResourceInputs(resource, props, t, options, resState, remote)
 		if err != nil {
 			return
 		}
@@ -802,6 +826,7 @@ func (ctx *Context) registerResource(
 				AcceptResources:         !disableResourceReferences,
 				AdditionalSecretOutputs: inputs.additionalSecretOutputs,
 				Version:                 inputs.version,
+				PluginDownloadURL:       inputs.pluginDownloadURL,
 				Remote:                  remote,
 				ReplaceOnChanges:        inputs.replaceOnChanges,
 			})
@@ -842,13 +867,14 @@ func (ctx *Context) RegisterRemoteComponentResource(
 
 // resourceState contains the results of a resource registration operation.
 type resourceState struct {
-	outputs         map[string]Output
-	providers       map[string]ProviderResource
-	provider        ProviderResource
-	version         string
-	aliases         []URNOutput
-	name            string
-	transformations []ResourceTransformation
+	outputs           map[string]Output
+	providers         map[string]ProviderResource
+	provider          ProviderResource
+	version           string
+	pluginDownloadURL string
+	aliases           []URNOutput
+	name              string
+	transformations   []ResourceTransformation
 }
 
 // Apply transformations and return the transformations themselves, as well as the transformed props and opts.
@@ -928,17 +954,13 @@ func getPackage(t string) string {
 	return components[0]
 }
 
-// collapseAliases collapses a list of Aliases into alist of URNs.
+// collapseAliases collapses a list of Aliases into a list of URNs. Parent aliases
+// are also included. If there are N child aliases, and M parent aliases, there will
+// be (M+1)*(N+1)-1 total aliases, or, as calculated in the logic below, N+(M*(1+N)).
 func (ctx *Context) collapseAliases(aliases []Alias, t, name string, parent Resource) ([]URNOutput, error) {
 	project, stack := ctx.Project(), ctx.Stack()
 
 	var aliasURNs []URNOutput
-	if parent != nil {
-		for _, alias := range parent.getAliases() {
-			urn := inheritedChildAlias(name, parent.getName(), t, project, stack, alias)
-			aliasURNs = append(aliasURNs, urn)
-		}
-	}
 
 	for _, alias := range aliases {
 		urn, err := alias.collapseToURN(name, t, parent, project, stack)
@@ -946,6 +968,30 @@ func (ctx *Context) collapseAliases(aliases []Alias, t, name string, parent Reso
 			return nil, fmt.Errorf("error collapsing alias to URN: %w", err)
 		}
 		aliasURNs = append(aliasURNs, urn)
+	}
+
+	if parent != nil {
+		parentAliases := parent.getAliases()
+		for i := range parentAliases {
+			parentAlias := parentAliases[i]
+			urn := inheritedChildAlias(name, parent.getName(), t, project, stack, parentAlias)
+			aliasURNs = append(aliasURNs, urn)
+			for j := range aliases {
+				childAlias := aliases[j]
+				urn, err := childAlias.collapseToURN(name, t, parent, project, stack)
+				if err != nil {
+					return nil, fmt.Errorf("error collapsing alias to URN: %w", err)
+				}
+				inheritedAlias := urn.ApplyT(func(urn URN) URNOutput {
+					aliasedChildName := string(resource.URN(urn).Name())
+					aliasedChildType := string(resource.URN(urn).Type())
+					return inheritedChildAlias(aliasedChildName, parent.getName(), aliasedChildType, project, stack, parentAlias)
+				}).ApplyT(func(urn interface{}) URN {
+					return urn.(URN)
+				}).(URNOutput)
+				aliasURNs = append(aliasURNs, inheritedAlias)
+			}
+		}
 	}
 
 	return aliasURNs, nil
@@ -956,7 +1002,7 @@ var mapOutputType = reflect.TypeOf((*MapOutput)(nil)).Elem()
 // makeResourceState creates a set of resolvers that we'll use to finalize state, for URNs, IDs, and output
 // properties.
 func (ctx *Context) makeResourceState(t, name string, resourceV Resource, providers map[string]ProviderResource,
-	provider ProviderResource, version string, aliases []URNOutput,
+	provider ProviderResource, version, pluginDownloadURL string, aliases []URNOutput,
 	transformations []ResourceTransformation) *resourceState {
 
 	// Ensure that the input resource is a pointer to a struct. Note that we don't fail if it is not, and we probably
@@ -1039,6 +1085,8 @@ func (ctx *Context) makeResourceState(t, name string, resourceV Resource, provid
 		rs.provider = provider
 		state.version = version
 		rs.version = version
+		state.pluginDownloadURL = pluginDownloadURL
+		rs.pluginDownloadURL = pluginDownloadURL
 		rs.urn = URNOutput{ctx.newOutputState(urnType, resourceV)}
 		state.outputs["urn"] = rs.urn
 		state.name = name
@@ -1146,16 +1194,17 @@ type resourceInputs struct {
 	aliases                 []string
 	additionalSecretOutputs []string
 	version                 string
+	pluginDownloadURL       string
 	replaceOnChanges        []string
 }
 
 // prepareResourceInputs prepares the inputs for a resource operation, shared between read and register.
-func (ctx *Context) prepareResourceInputs(props Input, t string, opts *resourceOptions, resource *resourceState,
-	remote bool) (*resourceInputs, error) {
+func (ctx *Context) prepareResourceInputs(res Resource, props Input, t string, opts *resourceOptions,
+	state *resourceState, remote bool) (*resourceInputs, error) {
 
 	// Get the parent and dependency URNs from the options, in addition to the protection bit.  If there wasn't an
 	// explicit parent, and a root stack resource exists, we will automatically parent to that.
-	resOpts, err := ctx.getOpts(t, resource.provider, opts, remote)
+	resOpts, err := ctx.getOpts(res, t, state.provider, opts, remote)
 	if err != nil {
 		return nil, fmt.Errorf("resolving options: %w", err)
 	}
@@ -1172,6 +1221,9 @@ func (ctx *Context) prepareResourceInputs(props Input, t string, opts *resourceO
 		ctx.withKeepOrRejectUnknowns(plugin.MarshalOptions{
 			KeepSecrets:   true,
 			KeepResources: ctx.keepResources,
+			// To initially scope the use of this new feature, we only keep output values when
+			// remote is true (for multi-lang components).
+			KeepOutputValues: remote && ctx.keepOutputValues,
 		}))
 	if err != nil {
 		return nil, fmt.Errorf("marshaling properties: %w", err)
@@ -1180,15 +1232,11 @@ func (ctx *Context) prepareResourceInputs(props Input, t string, opts *resourceO
 	// Convert the property dependencies map for RPC and remove duplicates.
 	rpcPropertyDeps := make(map[string]*pulumirpc.RegisterResourceRequest_PropertyDependencies)
 	for k, deps := range propertyDeps {
-		sort.Slice(deps, func(i, j int) bool { return deps[i] < deps[j] })
-
-		urns := make([]string, 0, len(deps))
+		urns := make([]string, len(deps))
 		for i, d := range deps {
-			if i > 0 && urns[i-1] == string(d) {
-				continue
-			}
-			urns = append(urns, string(d))
+			urns[i] = string(d)
 		}
+		sort.Strings(urns)
 
 		rpcPropertyDeps[k] = &pulumirpc.RegisterResourceRequest_PropertyDependencies{
 			Urns: urns,
@@ -1197,18 +1245,18 @@ func (ctx *Context) prepareResourceInputs(props Input, t string, opts *resourceO
 
 	// Merge all dependencies with what we got earlier from property marshaling, and remove duplicates.
 	var deps []string
-	depMap := make(map[URN]bool)
+	depSet := urnSet{}
 	for _, dep := range append(resOpts.depURNs, rpcDeps...) {
-		if _, has := depMap[dep]; !has {
+		if !depSet.has(dep) {
 			deps = append(deps, string(dep))
-			depMap[dep] = true
+			depSet.add(dep)
 		}
 	}
 	sort.Strings(deps)
 
 	// Await alias URNs
-	aliases := make([]string, len(resource.aliases))
-	for i, alias := range resource.aliases {
+	aliases := make([]string, len(state.aliases))
+	for i, alias := range state.aliases {
 		urn, _, _, err := alias.awaitURN(context.Background())
 		if err != nil {
 			return nil, fmt.Errorf("error waiting for alias URN to resolve: %w", err)
@@ -1231,7 +1279,9 @@ func (ctx *Context) prepareResourceInputs(props Input, t string, opts *resourceO
 		ignoreChanges:           resOpts.ignoreChanges,
 		aliases:                 aliases,
 		additionalSecretOutputs: resOpts.additionalSecretOutputs,
-		version:                 resource.version,
+		version:                 state.version,
+		pluginDownloadURL:       state.pluginDownloadURL,
+		replaceOnChanges:        resOpts.replaceOnChanges,
 	}, nil
 }
 
@@ -1256,11 +1306,12 @@ type resourceOpts struct {
 	importID                ID
 	ignoreChanges           []string
 	additionalSecretOutputs []string
+	replaceOnChanges        []string
 }
 
 // getOpts returns a set of resource options from an array of them. This includes the parent URN, any dependency URNs,
 // a boolean indicating whether the resource is to be protected, and the URN and ID of the resource's provider, if any.
-func (ctx *Context) getOpts(t string, provider ProviderResource, opts *resourceOptions, remote bool,
+func (ctx *Context) getOpts(res Resource, t string, provider ProviderResource, opts *resourceOptions, remote bool,
 ) (resourceOpts, error) {
 
 	var importID ID
@@ -1274,6 +1325,8 @@ func (ctx *Context) getOpts(t string, provider ProviderResource, opts *resourceO
 
 	var parentURN URN
 	if opts.Parent != nil {
+		opts.Parent.addChild(res)
+
 		urn, _, _, err := opts.Parent.URN().awaitURN(context.TODO())
 		if err != nil {
 			return resourceOpts{}, err
@@ -1283,14 +1336,15 @@ func (ctx *Context) getOpts(t string, provider ProviderResource, opts *resourceO
 
 	var depURNs []URN
 	if opts.DependsOn != nil {
-		depURNs = make([]URN, len(opts.DependsOn))
-		for i, r := range opts.DependsOn {
-			urn, _, _, err := r.URN().awaitURN(context.TODO())
+		depSet := urnSet{}
+		for _, r := range opts.DependsOn {
+			dependsOn, err := r(ctx.ctx)
 			if err != nil {
 				return resourceOpts{}, err
 			}
-			depURNs[i] = urn
+			depSet.union(dependsOn)
 		}
+		depURNs = depSet.values()
 	}
 
 	var providerRef string
@@ -1326,6 +1380,7 @@ func (ctx *Context) getOpts(t string, provider ProviderResource, opts *resourceO
 		importID:                importID,
 		ignoreChanges:           opts.IgnoreChanges,
 		additionalSecretOutputs: opts.AdditionalSecretOutputs,
+		replaceOnChanges:        opts.ReplaceOnChanges,
 	}, nil
 }
 

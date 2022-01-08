@@ -75,7 +75,7 @@ type ResourceInput interface {
 }
 
 func (*Resource) ElementType() reflect.Type {
-	return reflect.TypeOf((*Resource)(nil))
+	return reflect.TypeOf((**Resource)(nil)).Elem()
 }
 
 func (i *Resource) ToResourceOutput() ResourceOutput {
@@ -86,12 +86,10 @@ func (i *Resource) ToResourceOutputWithContext(ctx context.Context) ResourceOutp
 	return pulumi.ToOutputWithContext(ctx, i).(ResourceOutput)
 }
 
-type ResourceOutput struct {
-	*pulumi.OutputState
-}
+type ResourceOutput struct{ *pulumi.OutputState }
 
 func (ResourceOutput) ElementType() reflect.Type {
-	return reflect.TypeOf((*Resource)(nil))
+	return reflect.TypeOf((**Resource)(nil)).Elem()
 }
 
 func (o ResourceOutput) ToResourceOutput() ResourceOutput {
@@ -103,5 +101,6 @@ func (o ResourceOutput) ToResourceOutputWithContext(ctx context.Context) Resourc
 }
 
 func init() {
+	pulumi.RegisterInputType(reflect.TypeOf((*ResourceInput)(nil)).Elem(), &Resource{})
 	pulumi.RegisterOutputType(ResourceOutput{})
 }

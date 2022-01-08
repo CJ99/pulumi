@@ -33,6 +33,7 @@ import (
 
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/util/cmdutil"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/util/contract"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/util/logging"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/util/rpcutil/rpcerror"
@@ -65,8 +66,10 @@ type provider struct {
 	cfgdone                chan bool                        // closed when configuration has completed.
 	acceptSecrets          bool                             // true if this plugin accepts strongly-typed secrets.
 	acceptResources        bool                             // true if this plugin accepts strongly-typed resource refs.
+	acceptOutputs          bool                             // true if this plugin accepts output values.
 	supportsPreview        bool                             // true if this plugin supports previews for Create and Update.
 	disableProviderPreview bool                             // true if previews for Create and Update are disabled.
+	legacyPreview          bool                             // enables legacy behavior for unconfigured provider previews.
 }
 
 // NewProvider attempts to bind to a given package's resource plugin and then creates a gRPC connection to it.  If the
@@ -99,6 +102,8 @@ func NewProvider(host Host, ctx *Context, pkg tokens.Package, version *semver.Ve
 	}
 	contract.Assertf(plug != nil, "unexpected nil resource plugin for %s", pkg)
 
+	legacyPreview := cmdutil.IsTruthy(os.Getenv("PULUMI_LEGACY_PROVIDER_PREVIEW"))
+
 	return &provider{
 		ctx:                    ctx,
 		pkg:                    pkg,
@@ -106,6 +111,7 @@ func NewProvider(host Host, ctx *Context, pkg tokens.Package, version *semver.Ve
 		clientRaw:              pulumirpc.NewResourceProviderClient(plug.Conn),
 		cfgdone:                make(chan bool),
 		disableProviderPreview: disableProviderPreview,
+		legacyPreview:          legacyPreview,
 	}, nil
 }
 
@@ -509,6 +515,7 @@ func (p *provider) Configure(inputs resource.PropertyMap) error {
 		p.acceptSecrets = resp.GetAcceptSecrets()
 		p.acceptResources = resp.GetAcceptResources()
 		p.supportsPreview = resp.GetSupportsPreview()
+		p.acceptOutputs = resp.GetAcceptOutputs()
 
 		p.cfgknown, p.cfgerr = true, err
 		close(p.cfgdone)
@@ -703,12 +710,26 @@ func (p *provider) Create(urn resource.URN, props resource.PropertyMap, timeout 
 	}
 
 	// If this is a preview and the plugin does not support provider previews, or if the configuration for the provider
-	// is not fully known, hand back the inputs as the state.
+	// is not fully known, hand back an empty property map. This will force the language SDK will to treat all properties
+	// as unknown, which is conservatively correct.
 	//
-	// Note that this can cause problems for the language SDKs if there are input and state properties that share a name
-	// but expect differently-shaped values.
-	if preview && (p.disableProviderPreview || !p.supportsPreview || !p.cfgknown) {
-		return "", props, resource.StatusOK, nil
+	// If the provider does not support previews, return the inputs as the state. Note that this can cause problems for
+	// the language SDKs if there are input and state properties that share a name but expect differently-shaped values.
+	if preview {
+		// TODO: it would be great to swap the order of these if statements. This would prevent a behavioral change for
+		// providers that do not support provider previews, which will always return the inputs as state regardless of
+		// whether or not the config is known. Unfortunately, we can't, since the `supportsPreview` bit depends on the
+		// result of `Configure`, which we won't call if the `cfgknown` is false. It may be worth fixing this catch-22
+		// by extending the provider gRPC interface with a `SupportsFeature` API similar to the language monitor.
+		if !p.cfgknown {
+			if p.legacyPreview {
+				return "", props, resource.StatusOK, nil
+			}
+			return "", resource.PropertyMap{}, resource.StatusOK, nil
+		}
+		if !p.supportsPreview || p.disableProviderPreview {
+			return "", props, resource.StatusOK, nil
+		}
 	}
 
 	// We should only be calling {Create,Update,Delete} if the provider is fully configured.
@@ -917,12 +938,26 @@ func (p *provider) Update(urn resource.URN, id resource.ID,
 	}
 
 	// If this is a preview and the plugin does not support provider previews, or if the configuration for the provider
-	// is not fully known, hand back the inputs as the state.
+	// is not fully known, hand back an empty property map. This will force the language SDK to treat all properties
+	// as unknown, which is conservatively correct.
 	//
-	// Note that this can cause problems for the language SDKs if there are input and state properties that share a name
-	// but expect differently-shaped values.
-	if preview && (p.disableProviderPreview || !p.supportsPreview || !p.cfgknown) {
-		return news, resource.StatusOK, nil
+	// If the provider does not support previews, return the inputs as the state. Note that this can cause problems for
+	// the language SDKs if there are input and state properties that share a name but expect differently-shaped values.
+	if preview {
+		// TODO: it would be great to swap the order of these if statements. This would prevent a behavioral change for
+		// providers that do not support provider previews, which will always return the inputs as state regardless of
+		// whether or not the config is known. Unfortunately, we can't, since the `supportsPreview` bit depends on the
+		// result of `Configure`, which we won't call if the `cfgknown` is false. It may be worth fixing this catch-22
+		// by extending the provider gRPC interface with a `SupportsFeature` API similar to the language monitor.
+		if !p.cfgknown {
+			if p.legacyPreview {
+				return news, resource.StatusOK, nil
+			}
+			return resource.PropertyMap{}, resource.StatusOK, nil
+		}
+		if !p.supportsPreview || p.disableProviderPreview {
+			return news, resource.StatusOK, nil
+		}
 	}
 
 	// We should only be calling {Create,Update,Delete} if the provider is fully configured.
@@ -1070,6 +1105,9 @@ func (p *provider) Construct(info ConstructInfo, typ tokens.Type, name tokens.QN
 		KeepUnknowns:  true,
 		KeepSecrets:   p.acceptSecrets,
 		KeepResources: p.acceptResources,
+		// To initially scope the use of this new feature, we only keep output values for
+		// Construct and Call (when the client accepts them).
+		KeepOutputValues: p.acceptOutputs,
 	})
 	if err != nil {
 		return ConstructResult{}, err
@@ -1321,6 +1359,9 @@ func (p *provider) Call(tok tokens.ModuleMember, args resource.PropertyMap, info
 		KeepUnknowns:  true,
 		KeepSecrets:   true,
 		KeepResources: true,
+		// To initially scope the use of this new feature, we only keep output values for
+		// Construct and Call (when the client accepts them).
+		KeepOutputValues: p.acceptOutputs,
 	})
 	if err != nil {
 		return CallResult{}, err

@@ -104,6 +104,25 @@ func (d DocLanguageHelper) GetResourceFunctionResultName(modName string, f *sche
 	return title(funcName) + "Result"
 }
 
+func (d DocLanguageHelper) GetMethodName(m *schema.Method) string {
+	return camel(m.Name)
+}
+
+func (d DocLanguageHelper) GetMethodResultName(pkg *schema.Package, modName string, r *schema.Resource,
+	m *schema.Method) string {
+
+	if info, ok := pkg.Language["nodejs"].(NodePackageInfo); ok {
+		if info.LiftSingleValueMethodReturns && m.Function.Outputs != nil && len(m.Function.Outputs.Properties) == 1 {
+			modCtx := &modContext{
+				pkg: pkg,
+				mod: modName,
+			}
+			return modCtx.typeString(m.Function.Outputs.Properties[0].Type, false, nil)
+		}
+	}
+	return fmt.Sprintf("%s.%sResult", resourceName(r), title(d.GetMethodName(m)))
+}
+
 // GetPropertyName returns the property name specific to NodeJS.
 func (d DocLanguageHelper) GetPropertyName(p *schema.Property) (string, error) {
 	return p.Name, nil

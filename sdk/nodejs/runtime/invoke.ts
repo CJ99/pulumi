@@ -1,4 +1,4 @@
-// Copyright 2016-2018, Pulumi Corporation.
+// Copyright 2016-2021, Pulumi Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -209,7 +209,7 @@ function createInvokeRequest(tok: string, serialized: any, provider: string | un
 
 function getProvider(tok: string, opts: InvokeOptions) {
     return opts.provider ? opts.provider :
-           opts.parent ? opts.parent.getProvider(tok) : undefined;
+        opts.parent ? opts.parent.getProvider(tok) : undefined;
 }
 
 function deserializeResponse(tok: string, resp: any): any {
@@ -255,7 +255,10 @@ export function call<T>(tok: string, props: Inputs, res?: Resource): Output<T> {
                 version = res.__version;
             }
 
-            const [serialized, propertyDepsResources] = await serializePropertiesReturnDeps(`call:${tok}`, props);
+            // We keep output values when serializing inputs for call.
+            const [serialized, propertyDepsResources] = await serializePropertiesReturnDeps(`call:${tok}`, props, {
+                keepOutputValues: true,
+            });
             log.debug(`Call RPC prepared: tok=${tok}` + excessiveDebugOutput ? `, obj=${JSON.stringify(serialized)}` : ``);
 
             const req = await createCallRequest(tok, serialized, propertyDepsResources, provider, version);
@@ -329,7 +332,7 @@ export function call<T>(tok: string, props: Inputs, res?: Resource): Output<T> {
 }
 
 function createOutput<T>(label: string):
-    [Output<T>, (v: T, isKnown: boolean, isSecret: boolean, deps?: Resource[], err?: Error | undefined) => void] {
+[Output<T>, (v: T, isKnown: boolean, isSecret: boolean, deps?: Resource[], err?: Error | undefined) => void] {
     let resolveValue: (v: T) => void;
     let rejectValue: (err: Error) => void;
     let resolveIsKnown: (v: boolean) => void;

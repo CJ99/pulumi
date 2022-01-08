@@ -1,4 +1,4 @@
-﻿// Copyright 2016-2019, Pulumi Corporation
+﻿// Copyright 2016-2021, Pulumi Corporation
 
 using System;
 using System.Threading;
@@ -115,7 +115,7 @@ namespace Pulumi
                         Urn = urn,
                         StreamId = streamId ?? 0,
                         Ephemeral = ephemeral ?? false,
-                    });
+                    }).ConfigureAwait(false);
                 }
                 catch (Exception e)
                 {
@@ -141,7 +141,7 @@ namespace Pulumi
                 {
                     try
                     {
-                        return await resource.Urn.GetValueAsync().ConfigureAwait(false);
+                        return await resource.Urn.GetValueAsync(whenUnknown: "").ConfigureAwait(false);
                     }
                     catch
                     {

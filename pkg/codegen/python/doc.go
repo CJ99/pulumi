@@ -103,16 +103,25 @@ func (d DocLanguageHelper) GetResourceFunctionResultName(modName string, f *sche
 	return title(tokenToName(f.Token)) + "Result"
 }
 
-// GenPropertyCaseMap generates the case maps for a property.
-func (d DocLanguageHelper) GenPropertyCaseMap(pkg *schema.Package, modName, tool string, prop *schema.Property, snakeCaseToCamelCase, camelCaseToSnakeCase map[string]string, seenTypes codegen.Set) {
-	if _, imported := pkg.Language["python"]; !imported {
-		if err := pkg.ImportLanguages(map[string]schema.Language{"python": Importer}); err != nil {
-			fmt.Printf("error building case map for %q in module %q", prop.Name, modName)
-			return
+func (d DocLanguageHelper) GetMethodName(m *schema.Method) string {
+	return PyName(m.Name)
+}
+
+func (d DocLanguageHelper) GetMethodResultName(pkg *schema.Package, modName string, r *schema.Resource,
+	m *schema.Method) string {
+
+	if info, ok := pkg.Language["python"].(PackageInfo); ok {
+		if info.LiftSingleValueMethodReturns && m.Function.Outputs != nil && len(m.Function.Outputs.Properties) == 1 {
+			typeDetails := map[*schema.ObjectType]*typeDetails{}
+			mod := &modContext{
+				pkg:         pkg,
+				mod:         modName,
+				typeDetails: typeDetails,
+			}
+			return mod.typeString(m.Function.Outputs.Properties[0].Type, false, false)
 		}
 	}
-
-	recordProperty(prop, snakeCaseToCamelCase, camelCaseToSnakeCase, seenTypes)
+	return fmt.Sprintf("%s.%sResult", resourceName(r), title(d.GetMethodName(m)))
 }
 
 // GetPropertyName returns the property name specific to Python.

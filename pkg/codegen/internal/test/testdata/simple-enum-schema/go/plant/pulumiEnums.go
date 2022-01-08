@@ -10,6 +10,177 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// The log_name to populate in the Cloud Audit Record. This is added to regress pulumi/pulumi issue #7913
+type CloudAuditOptionsLogName string
+
+const (
+	// Default. Should not be used.
+	CloudAuditOptionsLogNameUnspecifiedLogName = CloudAuditOptionsLogName("UNSPECIFIED_LOG_NAME")
+	// Corresponds to "cloudaudit.googleapis.com/activity"
+	CloudAuditOptionsLogNameAdminActivity = CloudAuditOptionsLogName("ADMIN_ACTIVITY")
+	// Corresponds to "cloudaudit.googleapis.com/data_access"
+	CloudAuditOptionsLogNameDataAccess = CloudAuditOptionsLogName("DATA_ACCESS")
+	// What if triple quotes """ are used in the description
+	CloudAuditOptionsLogNameSynthetic = CloudAuditOptionsLogName("SYNTHETIC")
+)
+
+func (CloudAuditOptionsLogName) ElementType() reflect.Type {
+	return reflect.TypeOf((*CloudAuditOptionsLogName)(nil)).Elem()
+}
+
+func (e CloudAuditOptionsLogName) ToCloudAuditOptionsLogNameOutput() CloudAuditOptionsLogNameOutput {
+	return pulumi.ToOutput(e).(CloudAuditOptionsLogNameOutput)
+}
+
+func (e CloudAuditOptionsLogName) ToCloudAuditOptionsLogNameOutputWithContext(ctx context.Context) CloudAuditOptionsLogNameOutput {
+	return pulumi.ToOutputWithContext(ctx, e).(CloudAuditOptionsLogNameOutput)
+}
+
+func (e CloudAuditOptionsLogName) ToCloudAuditOptionsLogNamePtrOutput() CloudAuditOptionsLogNamePtrOutput {
+	return e.ToCloudAuditOptionsLogNamePtrOutputWithContext(context.Background())
+}
+
+func (e CloudAuditOptionsLogName) ToCloudAuditOptionsLogNamePtrOutputWithContext(ctx context.Context) CloudAuditOptionsLogNamePtrOutput {
+	return CloudAuditOptionsLogName(e).ToCloudAuditOptionsLogNameOutputWithContext(ctx).ToCloudAuditOptionsLogNamePtrOutputWithContext(ctx)
+}
+
+func (e CloudAuditOptionsLogName) ToStringOutput() pulumi.StringOutput {
+	return pulumi.ToOutput(pulumi.String(e)).(pulumi.StringOutput)
+}
+
+func (e CloudAuditOptionsLogName) ToStringOutputWithContext(ctx context.Context) pulumi.StringOutput {
+	return pulumi.ToOutputWithContext(ctx, pulumi.String(e)).(pulumi.StringOutput)
+}
+
+func (e CloudAuditOptionsLogName) ToStringPtrOutput() pulumi.StringPtrOutput {
+	return pulumi.String(e).ToStringPtrOutputWithContext(context.Background())
+}
+
+func (e CloudAuditOptionsLogName) ToStringPtrOutputWithContext(ctx context.Context) pulumi.StringPtrOutput {
+	return pulumi.String(e).ToStringOutputWithContext(ctx).ToStringPtrOutputWithContext(ctx)
+}
+
+type CloudAuditOptionsLogNameOutput struct{ *pulumi.OutputState }
+
+func (CloudAuditOptionsLogNameOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*CloudAuditOptionsLogName)(nil)).Elem()
+}
+
+func (o CloudAuditOptionsLogNameOutput) ToCloudAuditOptionsLogNameOutput() CloudAuditOptionsLogNameOutput {
+	return o
+}
+
+func (o CloudAuditOptionsLogNameOutput) ToCloudAuditOptionsLogNameOutputWithContext(ctx context.Context) CloudAuditOptionsLogNameOutput {
+	return o
+}
+
+func (o CloudAuditOptionsLogNameOutput) ToCloudAuditOptionsLogNamePtrOutput() CloudAuditOptionsLogNamePtrOutput {
+	return o.ToCloudAuditOptionsLogNamePtrOutputWithContext(context.Background())
+}
+
+func (o CloudAuditOptionsLogNameOutput) ToCloudAuditOptionsLogNamePtrOutputWithContext(ctx context.Context) CloudAuditOptionsLogNamePtrOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, v CloudAuditOptionsLogName) *CloudAuditOptionsLogName {
+		return &v
+	}).(CloudAuditOptionsLogNamePtrOutput)
+}
+
+func (o CloudAuditOptionsLogNameOutput) ToStringOutput() pulumi.StringOutput {
+	return o.ToStringOutputWithContext(context.Background())
+}
+
+func (o CloudAuditOptionsLogNameOutput) ToStringOutputWithContext(ctx context.Context) pulumi.StringOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, e CloudAuditOptionsLogName) string {
+		return string(e)
+	}).(pulumi.StringOutput)
+}
+
+func (o CloudAuditOptionsLogNameOutput) ToStringPtrOutput() pulumi.StringPtrOutput {
+	return o.ToStringPtrOutputWithContext(context.Background())
+}
+
+func (o CloudAuditOptionsLogNameOutput) ToStringPtrOutputWithContext(ctx context.Context) pulumi.StringPtrOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, e CloudAuditOptionsLogName) *string {
+		v := string(e)
+		return &v
+	}).(pulumi.StringPtrOutput)
+}
+
+type CloudAuditOptionsLogNamePtrOutput struct{ *pulumi.OutputState }
+
+func (CloudAuditOptionsLogNamePtrOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((**CloudAuditOptionsLogName)(nil)).Elem()
+}
+
+func (o CloudAuditOptionsLogNamePtrOutput) ToCloudAuditOptionsLogNamePtrOutput() CloudAuditOptionsLogNamePtrOutput {
+	return o
+}
+
+func (o CloudAuditOptionsLogNamePtrOutput) ToCloudAuditOptionsLogNamePtrOutputWithContext(ctx context.Context) CloudAuditOptionsLogNamePtrOutput {
+	return o
+}
+
+func (o CloudAuditOptionsLogNamePtrOutput) Elem() CloudAuditOptionsLogNameOutput {
+	return o.ApplyT(func(v *CloudAuditOptionsLogName) CloudAuditOptionsLogName {
+		if v != nil {
+			return *v
+		}
+		var ret CloudAuditOptionsLogName
+		return ret
+	}).(CloudAuditOptionsLogNameOutput)
+}
+
+func (o CloudAuditOptionsLogNamePtrOutput) ToStringPtrOutput() pulumi.StringPtrOutput {
+	return o.ToStringPtrOutputWithContext(context.Background())
+}
+
+func (o CloudAuditOptionsLogNamePtrOutput) ToStringPtrOutputWithContext(ctx context.Context) pulumi.StringPtrOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, e *CloudAuditOptionsLogName) *string {
+		if e == nil {
+			return nil
+		}
+		v := string(*e)
+		return &v
+	}).(pulumi.StringPtrOutput)
+}
+
+// CloudAuditOptionsLogNameInput is an input type that accepts CloudAuditOptionsLogNameArgs and CloudAuditOptionsLogNameOutput values.
+// You can construct a concrete instance of `CloudAuditOptionsLogNameInput` via:
+//
+//          CloudAuditOptionsLogNameArgs{...}
+type CloudAuditOptionsLogNameInput interface {
+	pulumi.Input
+
+	ToCloudAuditOptionsLogNameOutput() CloudAuditOptionsLogNameOutput
+	ToCloudAuditOptionsLogNameOutputWithContext(context.Context) CloudAuditOptionsLogNameOutput
+}
+
+var cloudAuditOptionsLogNamePtrType = reflect.TypeOf((**CloudAuditOptionsLogName)(nil)).Elem()
+
+type CloudAuditOptionsLogNamePtrInput interface {
+	pulumi.Input
+
+	ToCloudAuditOptionsLogNamePtrOutput() CloudAuditOptionsLogNamePtrOutput
+	ToCloudAuditOptionsLogNamePtrOutputWithContext(context.Context) CloudAuditOptionsLogNamePtrOutput
+}
+
+type cloudAuditOptionsLogNamePtr string
+
+func CloudAuditOptionsLogNamePtr(v string) CloudAuditOptionsLogNamePtrInput {
+	return (*cloudAuditOptionsLogNamePtr)(&v)
+}
+
+func (*cloudAuditOptionsLogNamePtr) ElementType() reflect.Type {
+	return cloudAuditOptionsLogNamePtrType
+}
+
+func (in *cloudAuditOptionsLogNamePtr) ToCloudAuditOptionsLogNamePtrOutput() CloudAuditOptionsLogNamePtrOutput {
+	return pulumi.ToOutput(in).(CloudAuditOptionsLogNamePtrOutput)
+}
+
+func (in *cloudAuditOptionsLogNamePtr) ToCloudAuditOptionsLogNamePtrOutputWithContext(ctx context.Context) CloudAuditOptionsLogNamePtrOutput {
+	return pulumi.ToOutputWithContext(ctx, in).(CloudAuditOptionsLogNamePtrOutput)
+}
+
 type ContainerBrightness float64
 
 const (
@@ -101,7 +272,7 @@ func (o ContainerBrightnessOutput) ToFloat64PtrOutputWithContext(ctx context.Con
 type ContainerBrightnessPtrOutput struct{ *pulumi.OutputState }
 
 func (ContainerBrightnessPtrOutput) ElementType() reflect.Type {
-	return containerBrightnessPtrType
+	return reflect.TypeOf((**ContainerBrightness)(nil)).Elem()
 }
 
 func (o ContainerBrightnessPtrOutput) ToContainerBrightnessPtrOutput() ContainerBrightnessPtrOutput {
@@ -110,6 +281,16 @@ func (o ContainerBrightnessPtrOutput) ToContainerBrightnessPtrOutput() Container
 
 func (o ContainerBrightnessPtrOutput) ToContainerBrightnessPtrOutputWithContext(ctx context.Context) ContainerBrightnessPtrOutput {
 	return o
+}
+
+func (o ContainerBrightnessPtrOutput) Elem() ContainerBrightnessOutput {
+	return o.ApplyT(func(v *ContainerBrightness) ContainerBrightness {
+		if v != nil {
+			return *v
+		}
+		var ret ContainerBrightness
+		return ret
+	}).(ContainerBrightnessOutput)
 }
 
 func (o ContainerBrightnessPtrOutput) ToFloat64PtrOutput() pulumi.Float64PtrOutput {
@@ -124,16 +305,6 @@ func (o ContainerBrightnessPtrOutput) ToFloat64PtrOutputWithContext(ctx context.
 		v := float64(*e)
 		return &v
 	}).(pulumi.Float64PtrOutput)
-}
-
-func (o ContainerBrightnessPtrOutput) Elem() ContainerBrightnessOutput {
-	return o.ApplyT(func(v *ContainerBrightness) ContainerBrightness {
-		var ret ContainerBrightness
-		if v != nil {
-			ret = *v
-		}
-		return ret
-	}).(ContainerBrightnessOutput)
 }
 
 // ContainerBrightnessInput is an input type that accepts ContainerBrightnessArgs and ContainerBrightnessOutput values.
@@ -267,7 +438,7 @@ func (o ContainerColorOutput) ToStringPtrOutputWithContext(ctx context.Context) 
 type ContainerColorPtrOutput struct{ *pulumi.OutputState }
 
 func (ContainerColorPtrOutput) ElementType() reflect.Type {
-	return containerColorPtrType
+	return reflect.TypeOf((**ContainerColor)(nil)).Elem()
 }
 
 func (o ContainerColorPtrOutput) ToContainerColorPtrOutput() ContainerColorPtrOutput {
@@ -276,6 +447,16 @@ func (o ContainerColorPtrOutput) ToContainerColorPtrOutput() ContainerColorPtrOu
 
 func (o ContainerColorPtrOutput) ToContainerColorPtrOutputWithContext(ctx context.Context) ContainerColorPtrOutput {
 	return o
+}
+
+func (o ContainerColorPtrOutput) Elem() ContainerColorOutput {
+	return o.ApplyT(func(v *ContainerColor) ContainerColor {
+		if v != nil {
+			return *v
+		}
+		var ret ContainerColor
+		return ret
+	}).(ContainerColorOutput)
 }
 
 func (o ContainerColorPtrOutput) ToStringPtrOutput() pulumi.StringPtrOutput {
@@ -290,16 +471,6 @@ func (o ContainerColorPtrOutput) ToStringPtrOutputWithContext(ctx context.Contex
 		v := string(*e)
 		return &v
 	}).(pulumi.StringPtrOutput)
-}
-
-func (o ContainerColorPtrOutput) Elem() ContainerColorOutput {
-	return o.ApplyT(func(v *ContainerColor) ContainerColor {
-		var ret ContainerColor
-		if v != nil {
-			ret = *v
-		}
-		return ret
-	}).(ContainerColorOutput)
 }
 
 // ContainerColorInput is an input type that accepts ContainerColorArgs and ContainerColorOutput values.
@@ -434,7 +605,7 @@ func (o ContainerSizeOutput) ToIntPtrOutputWithContext(ctx context.Context) pulu
 type ContainerSizePtrOutput struct{ *pulumi.OutputState }
 
 func (ContainerSizePtrOutput) ElementType() reflect.Type {
-	return containerSizePtrType
+	return reflect.TypeOf((**ContainerSize)(nil)).Elem()
 }
 
 func (o ContainerSizePtrOutput) ToContainerSizePtrOutput() ContainerSizePtrOutput {
@@ -443,6 +614,16 @@ func (o ContainerSizePtrOutput) ToContainerSizePtrOutput() ContainerSizePtrOutpu
 
 func (o ContainerSizePtrOutput) ToContainerSizePtrOutputWithContext(ctx context.Context) ContainerSizePtrOutput {
 	return o
+}
+
+func (o ContainerSizePtrOutput) Elem() ContainerSizeOutput {
+	return o.ApplyT(func(v *ContainerSize) ContainerSize {
+		if v != nil {
+			return *v
+		}
+		var ret ContainerSize
+		return ret
+	}).(ContainerSizeOutput)
 }
 
 func (o ContainerSizePtrOutput) ToIntPtrOutput() pulumi.IntPtrOutput {
@@ -457,16 +638,6 @@ func (o ContainerSizePtrOutput) ToIntPtrOutputWithContext(ctx context.Context) p
 		v := int(*e)
 		return &v
 	}).(pulumi.IntPtrOutput)
-}
-
-func (o ContainerSizePtrOutput) Elem() ContainerSizeOutput {
-	return o.ApplyT(func(v *ContainerSize) ContainerSize {
-		var ret ContainerSize
-		if v != nil {
-			ret = *v
-		}
-		return ret
-	}).(ContainerSizeOutput)
 }
 
 // ContainerSizeInput is an input type that accepts ContainerSizeArgs and ContainerSizeOutput values.
@@ -508,6 +679,16 @@ func (in *containerSizePtr) ToContainerSizePtrOutputWithContext(ctx context.Cont
 }
 
 func init() {
+	pulumi.RegisterInputType(reflect.TypeOf((*CloudAuditOptionsLogNameInput)(nil)).Elem(), CloudAuditOptionsLogName("UNSPECIFIED_LOG_NAME"))
+	pulumi.RegisterInputType(reflect.TypeOf((*CloudAuditOptionsLogNamePtrInput)(nil)).Elem(), CloudAuditOptionsLogName("UNSPECIFIED_LOG_NAME"))
+	pulumi.RegisterInputType(reflect.TypeOf((*ContainerBrightnessInput)(nil)).Elem(), ContainerBrightness(0.1))
+	pulumi.RegisterInputType(reflect.TypeOf((*ContainerBrightnessPtrInput)(nil)).Elem(), ContainerBrightness(0.1))
+	pulumi.RegisterInputType(reflect.TypeOf((*ContainerColorInput)(nil)).Elem(), ContainerColor("red"))
+	pulumi.RegisterInputType(reflect.TypeOf((*ContainerColorPtrInput)(nil)).Elem(), ContainerColor("red"))
+	pulumi.RegisterInputType(reflect.TypeOf((*ContainerSizeInput)(nil)).Elem(), ContainerSize(4))
+	pulumi.RegisterInputType(reflect.TypeOf((*ContainerSizePtrInput)(nil)).Elem(), ContainerSize(4))
+	pulumi.RegisterOutputType(CloudAuditOptionsLogNameOutput{})
+	pulumi.RegisterOutputType(CloudAuditOptionsLogNamePtrOutput{})
 	pulumi.RegisterOutputType(ContainerBrightnessOutput{})
 	pulumi.RegisterOutputType(ContainerBrightnessPtrOutput{})
 	pulumi.RegisterOutputType(ContainerColorOutput{})

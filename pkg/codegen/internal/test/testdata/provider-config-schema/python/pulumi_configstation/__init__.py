@@ -5,18 +5,20 @@
 from . import _utilities
 import typing
 # Export this package's modules as members:
+from ._enums import *
 from .provider import *
 from . import outputs
 
 # Make subpackages available:
 if typing.TYPE_CHECKING:
-    import pulumi_configstation.config as config
+    import pulumi_configstation.config as __config
+    config = __config
 else:
     config = _utilities.lazy_import('pulumi_configstation.config')
 
 _utilities.register(
     resource_modules="""
-null
+[]
 """,
     resource_packages="""
 [

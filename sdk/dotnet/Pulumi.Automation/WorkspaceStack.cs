@@ -53,6 +53,11 @@ namespace Pulumi.Automation
         public Workspace Workspace { get; }
 
         /// <summary>
+        /// A module for editing the Stack's state.
+        /// </summary>
+        public WorkspaceStackState State { get; }
+
+        /// <summary>
         /// Creates a new stack using the given workspace, and stack name.
         /// It fails if a stack with that name already exists.
         /// </summary>
@@ -115,6 +120,7 @@ namespace Pulumi.Automation
         {
             this.Name = name;
             this.Workspace = workspace;
+            this.State = new WorkspaceStackState(this);
 
             this._readyTask = mode switch
             {
@@ -642,12 +648,9 @@ namespace Pulumi.Automation
         /// supported for local backends.
         /// </summary>
         public async Task CancelAsync(CancellationToken cancellationToken = default)
-        {
-            await this.Workspace.RunCommandAsync(new[] { "cancel", "--stack", this.Name, "--yes" }, cancellationToken)
-                .ConfigureAwait(false);
-        }
+            => await this.Workspace.RunCommandAsync(new[] { "cancel", "--stack", this.Name, "--yes" }, cancellationToken).ConfigureAwait(false);
 
-        private async Task<CommandResult> RunCommandAsync(
+        internal async Task<CommandResult> RunCommandAsync(
             IList<string> args,
             Action<string>? onStandardOutput,
             Action<string>? onStandardError,
@@ -655,7 +658,7 @@ namespace Pulumi.Automation
             CancellationToken cancellationToken)
         {
             args = args.Concat(new[] { "--stack", this.Name }).ToList();
-            return await this.Workspace.RunStackCommandAsync(this.Name, args, onStandardOutput, onStandardError, onEngineEvent, cancellationToken);
+            return await this.Workspace.RunStackCommandAsync(this.Name, args, onStandardOutput, onStandardError, onEngineEvent, cancellationToken).ConfigureAwait(false);
         }
 
         public void Dispose()
